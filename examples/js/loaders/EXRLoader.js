@@ -188,7 +188,7 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	    }
 
 	    if (stop % 100 == 0) {
-	    	console.log(stop + ' c: ' + c + ' l: ' + l);
+	    	// console.log(stop + ' c: ' + c + ' l: ' + l);
 	    }
 
 	    if (l > HUF_DECBITS) {
@@ -287,6 +287,205 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
     return { c: c, lc: lc };
   }
 
+  var NBITS = 16;
+	var A_OFFSET = 1 << (NBITS - 1);
+	var M_OFFSET = 1 << (NBITS - 1);
+	var MOD_MASK = (1 << NBITS) - 1;
+
+  function wdec14(l, h) {
+	  var ls = (new Int16Array([l]))[0];
+	  var hs = (new Int16Array([h]))[0];
+
+	  var hi = hs;
+	  var ai = ls + (hi & 1) + (hi >> 1);
+
+	  var as = ai;
+	  var bs = ai - hi;
+
+	  // console.log(as + " " + bs);
+
+	  // exit(0);
+
+	  return {a: as, b: bs}
+	}
+
+	function wdec16(l, h) {
+	  var m = l;
+	  var d = h;
+	  var bb = (m - (d >> 1)) & MOD_MASK;
+	  var aa = (d + bb - A_OFFSET) & MOD_MASK;
+
+	  return {a: aa, b: bb};
+	}
+
+  function wav2Decode(
+  	j,
+    buffer,  // io: values are transformed in place
+    nx,      // i : x size
+    ox,      // i : x offset
+    ny,      // i : y size
+    oy,      // i : y offset
+    mx)      // i : maximum in[x][y] value
+	{
+		console.log("wav2Decode " + nx + " " + ox + " " + ny + " " + oy + " " + mx);
+
+	  var w14 = (mx < (1 << 14));
+	  var n = (nx > ny) ? ny : nx;
+	  var p = 1;
+	  var p2;
+
+	  //
+	  // Search max level
+	  //
+
+	  while (p <= n) p <<= 1;
+
+	  p >>= 1;
+	  p2 = p;
+	  p >>= 1;
+
+	  //
+	  // Hierarchical loop on smaller dimension n
+	  //
+
+	  while (p >= 1) {
+	    var py = 0;
+	    var ey = py + oy * (ny - p2);
+	    var oy1 = oy * p;
+	    var oy2 = oy * p2;
+	    var ox1 = ox * p;
+	    var ox2 = ox * p2;
+	    var i00, i01, i10, i11;
+
+	    console.log(oy1 + " " + oy2 + " " + ox1 + " " + ox2);
+
+	    console.log("py " + py + " ey " + ey);
+
+	    //
+	    // Y loop
+	    //
+
+	    for (; py <= ey; py += oy2) {
+	      var px = py;
+	      var ex = py + ox * (nx - p2);
+
+	      console.log("px " + px + " ex " + ex);
+
+	      //
+	      // X loop
+	      //
+
+	      for (; px <= ex; px += ox2) {
+	        var p01 = px + ox1;
+	        var p10 = px + oy1;
+	        var p11 = p10 + ox1;
+
+	        //
+	        // 2D wavelet decoding
+	        //
+
+	        if (w14) {
+	          var tmp = wdec14(buffer[px + j], buffer[p10 + j]);
+	          i00 = tmp.a;
+	          i10 = tmp.b;
+
+	          var tmp = wdec14(buffer[p01 + j], buffer[p11 + j]);
+	          i01 = tmp.a;
+	          i11 = tmp.b;
+
+	          // if (px % 100 == 0) {
+	          // 	console.log(px + " " + i00 + " " + i10 + " " + i01 + " " + i11);
+	         	// }
+
+	          var tmp = wdec14(i00, i01);
+	          buffer[px + j] = tmp.a;
+	          buffer[p01 + j] = tmp.b;
+
+	          var tmp = wdec14(i10, i11);
+	          buffer[p10 + j] = tmp.a;
+	          buffer[p11 + j] = tmp.b;
+
+	          // if (px % 100 == 0) {
+	          // 	console.log(px + " " + buffer[px + j] + " " + buffer[p01 + j] + " "  + buffer[p10 + j] + " " + buffer[p11 + j]);
+	          // }
+	        } else {
+	          var tmp = wdec16(buffer[px + j], buffer[p10 + j]);
+	          i00 = tmp.a;
+	          i10 = tmp.b;
+
+	          var tmp = wdec16(buffer[p01 + j], buffer[p11 + j]);
+	          i01 = tmp.a;
+	          i11 = tmp.b;
+
+	          var tmp = wdec16(i00, i01);
+	          buffer[px + j] = tmp.a;
+	          buffer[p01 + j] = tmp.b;
+
+	          var tmp = wdec16(i10, i11);
+	          buffer[p10 + j] = tmp.a;
+	          buffer[p11 + j] = tmp.b;
+	        }
+	      }
+
+	      //
+	      // Decode (1D) odd column (still in Y loop)
+	      //
+
+	      if (nx & p) {
+	        var p10 = px + oy1;
+
+	        if (w14) {
+	          var tmp = wdec14(buffer[px + j], buffer[p10 + j]);
+	        	i00 = tmp.a;
+	        	buffer[p10 + j] = tmp.b;
+	        } else {
+	          var tmp = wdec16(buffer[px + j], buffer[p10 + j]);
+	          i00 = tmp.a;
+	          buffer[p10 + j] = tmp.b;
+	        }
+
+	        buffer[px + j] = i00;
+	      }
+	    }
+
+	    //
+	    // Decode (1D) odd line (must loop in X)
+	    //
+
+	    if (ny & p) {
+	      var px = py;
+	      var ex = py + ox * (nx - p2);
+
+	      for (; px <= ex; px += ox2) {
+	        var p01 = px + ox1;
+
+	        if (w14) {
+	          var tmp = wdec14(buffer[px + j], buffer[p01 + j]);
+	        	i00 = tmp.a;
+	        	buffer[p01 + j] = tmp.b;
+	        } else {
+	          var tmp = wdec16(buffer[px + j], buffer[p01 + j]);
+	          i00 = tmp.a;
+	          buffer[p01 + j] = tmp.b;
+	        }
+
+	        buffer[px + j] = i00;
+	      }
+	    }
+
+	    //
+	    // Next level
+	    //
+
+	    p2 = p;
+	    p >>= 1;
+
+	    console.log("next level " + p2 + " " + p);
+	  }
+
+	  return py;
+	}
+
 	function hufDecode(encodingTable, decodingTable, inBuffer, inOffset, ni, rlc, no, outBuffer, outOffset) {
 	  var c = 0;
 	  var lc = 0;
@@ -305,11 +504,12 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	    lc = temp.lc;
 
 	    while (lc >= HUF_DECBITS) {
+
 	    	// console.log('c: ' + c + ' lc: ' + lc);
 
 	    	var index = (c >> (lc - HUF_DECBITS)) & HUF_DECMASK;
 	    	if (stop % 100 == 0) {
-	    		console.log(stop + ' lc: ' + lc + ' index: ' + index);
+	    		// console.log(stop + ' lc: ' + lc + ' index: ' + index);
 	    	}
 	      var pl = decodingTable[index];
 
@@ -347,7 +547,7 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	                ((c >> (lc - l)) & ((1 << l) - 1))) {
 
 	              lc -= l;
-	              var temp = getCode(pl.lit, rlc, c, lc, inBuffer, inOffset, outBuffer, outOffset, outBufferEndOffset);
+	              var temp = getCode(pl.p[j], rlc, c, lc, inBuffer, inOffset, outBuffer, outOffset, outBufferEndOffset);
 	              c = temp.c;
 								lc = temp.lc;
 	              break;
@@ -429,23 +629,45 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
       throw 'Something wrong with hufUncompress';
     }
 
-    for (var print = 0; print < 10; print++) {
+    for (var print = 0; print < 1000; print+=100) {
     	console.log('freq: ' + freq[print]);
     }
 
     hufBuildDecTable(freq, im, iM, hdec);
 
-    console.log('hdec[12203].len: ' + hdec[12203].len + ' hdec[12203].lit: ' + hdec[12203].lit + ' hdec[12203].p: ' + hdec[12203].p);
-    console.log('hdec[12204].len: ' + hdec[12204].len + ' hdec[12204].lit: ' + hdec[12204].lit + ' hdec[12204].p: ' + hdec[12204].p);
+    for (var print = 0; print < 1000; print+=100) {
+    	console.log('hdec: ' + hdec[print].len + " " + hdec[print].lit);
+    }
+
+
 
     hufDecode(freq, hdec, inBuffer, inOffset, nBits, iM, nRaw, outBuffer, outOffset);
+
+
 	}
 
-	function decompressPIZ(inBuffer, offset, tmpBufSize) {
+	function applyLut(lut, data, nData) {
+	  for (var i = 0; i < nData; ++i) {
+	  	data[i] = lut[data[i]];
+	  }
+	}
+
+	function decompressPIZ(
+		outBuffer,
+		outOffset,
+		inBuffer,
+		inOffset,
+		tmpBufSize,
+		num_channels,
+		exrChannelInfos,
+		dataWidth,
+		num_lines
+	)
+	{
 		var bitmap = new Uint8Array(BITMAP_SIZE);
 
-  	var minNonZero = parseUint16(inBuffer, offset);
-  	var maxNonZero = parseUint16(inBuffer, offset);
+  	var minNonZero = parseUint16(inBuffer, inOffset);
+  	var maxNonZero = parseUint16(inBuffer, inOffset);
 
   	console.log('minNonZero: ' + minNonZero);
   	console.log('maxNonZero: ' + maxNonZero);
@@ -456,7 +678,7 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 
 	  if (minNonZero <= maxNonZero) {
 	  	for (var i = 0; i < maxNonZero - minNonZero + 1; i++) {
-				bitmap[i + minNonZero] = parseUint8(inBuffer, offset);
+				bitmap[i + minNonZero] = parseUint8(inBuffer, inOffset);
 			}
 	  }
 
@@ -475,19 +697,87 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	  // Huffman decoding
 	  //
 
-	  var length = parseUint32(inBuffer, offset);
+	  var length = parseUint32(inBuffer, inOffset);
 
 		console.log('length: ' + length);
 
-	  var tmpBuffer = new Uint16Array(tmpBufSize);
-	  var tmpOffset = { value: 0 }
-	  hufUncompress(inBuffer, offset, length, tmpBuffer, tmpOffset, tmpBufSize);
+	  hufUncompress(inBuffer, inOffset, length, outBuffer, outOffset, tmpBufSize);
+
+	  for (var i = 0; i < 1000; i+=100) {
+	  	console.log(outBuffer[i]);
+	  }
 
 	  //
 	  // Wavelet decoding
 	  //
 
+	  var pizChannelData = new Array(num_channels);
 
+	  var outBufferEnd = 0
+
+	  for (var i = 0; i < num_channels; i++) {
+	  	var exrChannelInfo = exrChannelInfos[i];
+
+	  	var pixelSize = 2; // assumes HALF_FLOAT
+
+	  	pizChannelData[i] = {};
+	  	pizChannelData[i]['start'] = outBufferEnd;
+	  	pizChannelData[i]['end'] = pizChannelData[i]['start'];
+	  	pizChannelData[i]['nx'] = dataWidth;
+	  	pizChannelData[i]['ny'] = num_lines;
+	  	pizChannelData[i]['size'] = 1;
+
+	  	outBufferEnd += pizChannelData[i].nx * pizChannelData[i].ny * pizChannelData[i].size;
+
+	  	console.log(pizChannelData[i].start + ' ' + pizChannelData[i].end + ' ' + (outBufferEnd - pizChannelData[i].start) + ' ' + pizChannelData[i].nx + ' ' + pizChannelData[i].ny + ' ' + pizChannelData[i].size);
+	  }
+
+	  for (var i = 0; i < 5; i++) {
+	  	console.log("before wav2Decode " + outBuffer[i]);
+	  }
+
+	  var fooOffset = 0;
+
+	  for (var i = 0; i < num_channels; i++) {
+	  	for (var j = 0; j < pizChannelData[i].size; ++j) {
+	  		fooOffset += wav2Decode(
+	  			j + fooOffset,
+	  			outBuffer,
+	  			pizChannelData[i].nx,
+	  			pizChannelData[i].size,
+	  			pizChannelData[i].ny,
+	  			pizChannelData[i].nx * pizChannelData[i].size,
+	  			maxValue
+	  		);
+
+
+	  	}
+	  }
+
+	  //
+	  // Expand the pixel data to their original range
+	  //
+
+	  for (var i = 0; i < 5; i++) {
+	  	console.log("before lut " + outBuffer[i]);
+	  }
+
+	  applyLut(lut, outBuffer, outBufferEnd);
+
+	  for (var i = 0; i < 5; i++) {
+	  	console.log("after lut " + outBuffer[i]);
+	  }
+
+	  // for (var y = 0; y < num_lines; y++) {
+	  //   for (var i = 0; i < channelData.size(); ++i) {
+	  //     PIZChannelData &cd = channelData[i];
+
+	  //     size_t n = static_cast<size_t>(cd.nx * cd.size);
+	  //     memcpy(outPtr, cd.end, static_cast<size_t>(n * sizeof(unsigned short)));
+	  //     outPtr += n * sizeof(unsigned short);
+	  //     cd.end += n;
+	  //   }
+	  // }
 
 		exit(0);
 
@@ -841,14 +1131,29 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 			console.log('line_no: ' + line_no);
 			console.log('data_len: ' + data_len);
 
-			var width = 1024;
-			var num_lines = 32;
-			var pixel_data_size = 6;
+			var width = 1024; // known from the image size
+			var num_lines = 32; // given for scanlines
+			var pixel_data_size = 6; // 3 channels * 2 bytes per channel (HALF)
 
 			var tmpBufSize = width * num_lines * pixel_data_size;
 
-			var tmpBuffer = decompressPIZ(buffer, offset, tmpBufSize);
-			var tmpBufferOffset = {value: 0};
+			// is this the right format for this? thinking this maybe should be float, or half size float, or just number
+			var outBuffer = new Uint16Array(tmpBufSize);
+	  	var outOffset = { value: 0 };
+
+	    // outBuffer,
+			// outOffset,
+			// inBuffer,
+			// inOffset,
+			// tmpBufSize,
+			// num_channels,
+			// exrChannelInfos,
+			// dataWidth,
+			// num_lines
+
+			//buffer appears to be ArrayBuffer
+
+			decompressPIZ(outBuffer, outOffset, buffer, offset, tmpBufSize, numChannels, EXRHeader.channels, width, num_lines);
 
 			for ( var y = 0; y < height; y ++ ) {
 
