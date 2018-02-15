@@ -357,9 +357,9 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	    var ox2 = ox * p2;
 	    var i00, i01, i10, i11;
 
-	    console.log(oy1 + " " + oy2 + " " + ox1 + " " + ox2);
+	    // console.log(oy1 + " " + oy2 + " " + ox1 + " " + ox2);
 
-	    console.log("py " + py + " ey " + ey);
+	    // console.log("py " + py + " ey " + ey);
 
 	    //
 	    // Y loop
@@ -369,7 +369,7 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	      var px = py;
 	      var ex = py + ox * (nx - p2);
 
-	      console.log("px " + px + " ex " + ex);
+	      // console.log("px " + px + " ex " + ex);
 
 	      //
 	      // X loop
@@ -758,15 +758,15 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	  // Expand the pixel data to their original range
 	  //
 
-	  for (var i = 0; i < 5; i++) {
-	  	console.log("before lut " + outBuffer[i]);
-	  }
+	  // for (var i = 0; i < 5; i++) {
+	  // 	console.log("before lut " + outBuffer[i]);
+	  // }
 
 	  applyLut(lut, outBuffer, outBufferEnd);
 
-	  for (var i = 0; i < 5; i++) {
-	  	console.log("after lut " + outBuffer[i]);
-	  }
+	  // for (var i = 0; i < 5; i++) {
+	  // 	console.log("after lut " + outBuffer[i]);
+	  // }
 
 	  // for (var y = 0; y < num_lines; y++) {
 	  //   for (var i = 0; i < channelData.size(); ++i) {
@@ -778,8 +778,6 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	  //     cd.end += n;
 	  //   }
 	  // }
-
-		exit(0);
 
 		return true;
 	}
@@ -1081,6 +1079,8 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	var height = EXRHeader.dataWindow.yMax - EXRHeader.dataWindow.yMin + 1;
 	var numChannels = EXRHeader.channels.length;
 
+	console.log("numChannels: " + numChannels);
+
 	var byteArray = new Float32Array( width * height * numChannels );
 
 	var channelOffsets = {
@@ -1123,7 +1123,11 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 
 	} else if (EXRHeader.compression == 'PIZ_COMPRESSION') {
 
-		for ( var y = 0; y < height; y ++ ) {
+		var width = 1024; // known from the image size
+		var num_lines = 32; // given for scanlines
+		var pixel_data_size = 6; // 3 channels * 2 bytes per channel (HALF)
+
+		for ( var scanlineBlockIdx = 0; scanlineBlockIdx < height / num_lines; scanlineBlockIdx++ ) {
 
 			var line_no = parseUint32( buffer, offset );
 			var data_len = parseUint32( buffer, offset );
@@ -1131,34 +1135,25 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 			console.log('line_no: ' + line_no);
 			console.log('data_len: ' + data_len);
 
-			var width = 1024; // known from the image size
-			var num_lines = 32; // given for scanlines
-			var pixel_data_size = 6; // 3 channels * 2 bytes per channel (HALF)
+			// this will read num_lines ie 32 out of our buffer
 
-			var tmpBufSize = width * num_lines * pixel_data_size;
+			var tmpBufferSize = width * num_lines * pixel_data_size;
+			var tmpBuffer = new Uint16Array(tmpBufferSize); // is this the right format for this? thinking this maybe should be float, or half size float, or just number
+	  	var tmpOffset = { value: 0 };
 
-			// is this the right format for this? thinking this maybe should be float, or half size float, or just number
-			var outBuffer = new Uint16Array(tmpBufSize);
-	  	var outOffset = { value: 0 };
+			decompressPIZ(tmpBuffer, tmpOffset, buffer, offset, tmpBufferSize, numChannels, EXRHeader.channels, width, num_lines);
 
-	    // outBuffer,
-			// outOffset,
-			// inBuffer,
-			// inOffset,
-			// tmpBufSize,
-			// num_channels,
-			// exrChannelInfos,
-			// dataWidth,
-			// num_lines
+			for (var i = 0; i < 5; i++) {
+		  	console.log("tmp buffer " + tmpBuffer[i]);
+		  }
 
-			//buffer appears to be ArrayBuffer
+		  var tmpOffset = { value: 0 };
 
-			decompressPIZ(outBuffer, outOffset, buffer, offset, tmpBufSize, numChannels, EXRHeader.channels, width, num_lines);
+			// tmpBuffer should now have 32 lines worth of data decompressed
 
-			for ( var y = 0; y < height; y ++ ) {
+			// TODO: must loop over the decompressed data, moving ahead as we go
 
-				var y_scanline = parseUint32( tmpBuffer, tmpBufferOffset );
-				var dataSize = parseUint32( tmpBuffer, tmpBufferOffset );
+			for ( var line_y = 0; line_y < num_lines; line_y ++ ) {
 
 				for ( var channelID = 0; channelID < EXRHeader.channels.length; channelID ++ ) {
 
@@ -1167,10 +1162,12 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 						// HALF
 						for ( var x = 0; x < width; x ++ ) {
 
-							var val = parseFloat16( tmpBuffer, tmpBufferOffset );
 							var cOff = channelOffsets[ EXRHeader.channels[ channelID ].name ];
+							var val = decodeFloat16(tmpBuffer[line_y * width + x]);
 
-							byteArray[ ( ( ( width - y_scanline ) * ( height * numChannels ) ) + ( x * numChannels ) ) + cOff ] = val;
+							var true_y = line_y + (scanlineBlockIdx * 32);
+
+							byteArray[ ( ( true_y * ( width * numChannels ) ) + ( x * numChannels ) ) + cOff ] = val;
 
 						}
 
@@ -1197,7 +1194,7 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 		width: width,
 		height: height,
 		data: byteArray,
-		format: THREE.RGBAFormat,
+		format: THREE.RGBFormat,
 		type: THREE.FloatType
 	};
 
