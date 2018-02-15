@@ -1163,9 +1163,9 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 						for ( var x = 0; x < width; x ++ ) {
 
 							var cOff = channelOffsets[ EXRHeader.channels[ channelID ].name ];
-							var val = decodeFloat16(tmpBuffer[line_y * width + x]);
+							var val = decodeFloat16(tmpBuffer[ (channelID * (num_lines * width)) + (line_y * width) + x ]);
 
-							var true_y = line_y + (scanlineBlockIdx * 32);
+							var true_y = line_y + (scanlineBlockIdx * num_lines);
 
 							byteArray[ ( ( true_y * ( width * numChannels ) ) + ( x * numChannels ) ) + cOff ] = val;
 
