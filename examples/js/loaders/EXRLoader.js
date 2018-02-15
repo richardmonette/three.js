@@ -163,8 +163,6 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	  }
 
 	  hufCanonicalCodeTable(hcode);
-
-	  console.log('hcode[13]: ' + hcode[13]);
 	}
 
 	function hufLength(code) { return code & 63; }
@@ -327,8 +325,6 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
     oy,      // i : y offset
     mx)      // i : maximum in[x][y] value
 	{
-		console.log("wav2Decode " + nx + " " + ox + " " + ny + " " + oy + " " + mx);
-
 	  var w14 = (mx < (1 << 14));
 	  var n = (nx > ny) ? ny : nx;
 	  var p = 1;
@@ -357,10 +353,6 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	    var ox2 = ox * p2;
 	    var i00, i01, i10, i11;
 
-	    // console.log(oy1 + " " + oy2 + " " + ox1 + " " + ox2);
-
-	    // console.log("py " + py + " ey " + ey);
-
 	    //
 	    // Y loop
 	    //
@@ -368,8 +360,6 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	    for (; py <= ey; py += oy2) {
 	      var px = py;
 	      var ex = py + ox * (nx - p2);
-
-	      // console.log("px " + px + " ex " + ex);
 
 	      //
 	      // X loop
@@ -393,10 +383,6 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	          i01 = tmp.a;
 	          i11 = tmp.b;
 
-	          // if (px % 100 == 0) {
-	          // 	console.log(px + " " + i00 + " " + i10 + " " + i01 + " " + i11);
-	         	// }
-
 	          var tmp = wdec14(i00, i01);
 	          buffer[px + j] = tmp.a;
 	          buffer[p01 + j] = tmp.b;
@@ -404,10 +390,6 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	          var tmp = wdec14(i10, i11);
 	          buffer[p10 + j] = tmp.a;
 	          buffer[p11 + j] = tmp.b;
-
-	          // if (px % 100 == 0) {
-	          // 	console.log(px + " " + buffer[px + j] + " " + buffer[p01 + j] + " "  + buffer[p10 + j] + " " + buffer[p11 + j]);
-	          // }
 	        } else {
 	          var tmp = wdec16(buffer[px + j], buffer[p10 + j]);
 	          i00 = tmp.a;
@@ -479,8 +461,6 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 
 	    p2 = p;
 	    p >>= 1;
-
-	    console.log("next level " + p2 + " " + p);
 	  }
 
 	  return py;
@@ -494,40 +474,22 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	  var outBufferEndOffset = no;
 	  var inOffsetEnd = parseInt(inOffset.value + (ni + 7) / 8);  // input byte size
 
-	  var stop = 0;
-
-	  console.log('inOffset: ' + inOffset.value + ' inOffsetEnd: ' + inOffsetEnd + ' delta: ' + (inOffsetEnd - inOffset.value));
-
 	  while (inOffset.value < inOffsetEnd) {
 	    var temp = getChar(c, lc, inBuffer, inOffset);
 	    c = temp.c;
 	    lc = temp.lc;
 
 	    while (lc >= HUF_DECBITS) {
-
-	    	// console.log('c: ' + c + ' lc: ' + lc);
-
 	    	var index = (c >> (lc - HUF_DECBITS)) & HUF_DECMASK;
-	    	if (stop % 100 == 0) {
-	    		// console.log(stop + ' lc: ' + lc + ' index: ' + index);
-	    	}
 	      var pl = decodingTable[index];
 
-	      // console.log('pl.len: ' + pl.len + ' pl.lit: ' + pl.lit);
-
-	      // exit(0);
-
 	      if (pl.len) {
-	      	// console.log('pl.len');
-
-	        lc -= pl.len;
+	      	lc -= pl.len;
 	        var temp = getCode(pl.lit, rlc, c, lc, inBuffer, inOffset, outBuffer, outOffset, outBufferEndOffset);
 	        c = temp.c;
 	    		lc = temp.lc;
 	      } else {
-	      	// console.log('else');
-
-	        if (!pl.p) {
+	      	if (!pl.p) {
 	          throw 'hufDecode issues';
 	        }
 
@@ -595,9 +557,6 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	}
 
 	function hufUncompress(inBuffer, inOffset, nCompressed, outBuffer, outOffset, nRaw) {
-		console.log('nCompressed: ' + nCompressed);
-		console.log('nRaw: ' + nRaw);
-
 		var initialInOffset = inOffset.value;
 
 		var im = parseUint32(inBuffer, inOffset);
@@ -610,10 +569,6 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 			throw 'Something wrong with HUF_ENCSIZE';
 		}
 
-		console.log('im: ' + im);
-		console.log('iM: ' + iM);
-		console.log('nBits: ' + nBits);
-
 		var freq = new Array(HUF_ENCSIZE);
 		var hdec = new Array(HUF_DECSIZE);
 
@@ -621,29 +576,15 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 
 		var ni = nCompressed - (inOffset.value - initialInOffset);
 
-		console.log('ni: ' + ni);
-
 		hufUnpackEncTable(inBuffer, inOffset, ni, im, iM, freq);
 
 		if (nBits > 8 * (nCompressed - (inOffset.value - initialInOffset))) {
       throw 'Something wrong with hufUncompress';
     }
 
-    for (var print = 0; print < 1000; print+=100) {
-    	console.log('freq: ' + freq[print]);
-    }
-
     hufBuildDecTable(freq, im, iM, hdec);
 
-    for (var print = 0; print < 1000; print+=100) {
-    	console.log('hdec: ' + hdec[print].len + " " + hdec[print].lit);
-    }
-
-
-
     hufDecode(freq, hdec, inBuffer, inOffset, nBits, iM, nRaw, outBuffer, outOffset);
-
-
 	}
 
 	function applyLut(lut, data, nData) {
@@ -669,9 +610,6 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
   	var minNonZero = parseUint16(inBuffer, inOffset);
   	var maxNonZero = parseUint16(inBuffer, inOffset);
 
-  	console.log('minNonZero: ' + minNonZero);
-  	console.log('maxNonZero: ' + maxNonZero);
-
   	if (maxNonZero >= BITMAP_SIZE) {
 	  	throw 'Something is wrong with PIZ_COMPRESSION BITMAP_SIZE'
 	  }
@@ -682,16 +620,8 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 			}
 	  }
 
-	  var checksum = 0;
-	  for (var i = 0; i < BITMAP_SIZE; i++) {
-	    checksum += bitmap[i];
-	  }
-	  console.log('checksum: ' + checksum);
-
 	  var lut = new Uint16Array(USHORT_RANGE);
 	  var maxValue = reverseLutFromBitmap(bitmap, lut);
-
-	  console.log('maxValue: ' + maxValue);
 
 	  //
 	  // Huffman decoding
@@ -699,13 +629,7 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 
 	  var length = parseUint32(inBuffer, inOffset);
 
-		console.log('length: ' + length);
-
 	  hufUncompress(inBuffer, inOffset, length, outBuffer, outOffset, tmpBufSize);
-
-	  for (var i = 0; i < 1000; i+=100) {
-	  	console.log(outBuffer[i]);
-	  }
 
 	  //
 	  // Wavelet decoding
@@ -728,12 +652,6 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	  	pizChannelData[i]['size'] = 1;
 
 	  	outBufferEnd += pizChannelData[i].nx * pizChannelData[i].ny * pizChannelData[i].size;
-
-	  	console.log(pizChannelData[i].start + ' ' + pizChannelData[i].end + ' ' + (outBufferEnd - pizChannelData[i].start) + ' ' + pizChannelData[i].nx + ' ' + pizChannelData[i].ny + ' ' + pizChannelData[i].size);
-	  }
-
-	  for (var i = 0; i < 5; i++) {
-	  	console.log("before wav2Decode " + outBuffer[i]);
 	  }
 
 	  var fooOffset = 0;
@@ -758,15 +676,7 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	  // Expand the pixel data to their original range
 	  //
 
-	  // for (var i = 0; i < 5; i++) {
-	  // 	console.log("before lut " + outBuffer[i]);
-	  // }
-
 	  applyLut(lut, outBuffer, outBufferEnd);
-
-	  // for (var i = 0; i < 5; i++) {
-	  // 	console.log("after lut " + outBuffer[i]);
-	  // }
 
 	  // for (var y = 0; y < num_lines; y++) {
 	  //   for (var i = 0; i < channelData.size(); ++i) {
@@ -1065,8 +975,6 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	}
 	var numBlocks = dataWindowHeight / scanlineBlockSize;
 
-	console.log('numBlocks:' + numBlocks);
-
 	for ( var i = 0; i < numBlocks; i ++ ) {
 
 		var scanlineOffset = parseUlong( buffer, offset );
@@ -1078,8 +986,6 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	var width = EXRHeader.dataWindow.xMax - EXRHeader.dataWindow.xMin + 1;
 	var height = EXRHeader.dataWindow.yMax - EXRHeader.dataWindow.yMin + 1;
 	var numChannels = EXRHeader.channels.length;
-
-	console.log("numChannels: " + numChannels);
 
 	var byteArray = new Float32Array( width * height * numChannels );
 
@@ -1132,9 +1038,6 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 			var line_no = parseUint32( buffer, offset );
 			var data_len = parseUint32( buffer, offset );
 
-			console.log('line_no: ' + line_no);
-			console.log('data_len: ' + data_len);
-
 			// this will read num_lines ie 32 out of our buffer
 
 			var tmpBufferSize = width * num_lines * pixel_data_size;
@@ -1142,10 +1045,6 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	  	var tmpOffset = { value: 0 };
 
 			decompressPIZ(tmpBuffer, tmpOffset, buffer, offset, tmpBufferSize, numChannels, EXRHeader.channels, width, num_lines);
-
-			for (var i = 0; i < 5; i++) {
-		  	console.log("tmp buffer " + tmpBuffer[i]);
-		  }
 
 		  var tmpOffset = { value: 0 };
 
