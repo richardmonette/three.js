@@ -63,8 +63,6 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 
 	  lc -= nBits;
 
-	  // console.log('nBits: ' + nBits + ' c: ' + c + ' lc: ' + lc);
-
 	  return { l: (c >> lc) & ((1 << nBits) - 1), c: c, lc: lc };
 	}
 
@@ -126,8 +124,6 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	    lc = bits.lc;
 	    hcode[im] = l;
 
-	    // console.log('l: ' + l);
-
 	    if (l == LONG_ZEROCODE_RUN) {
 	      if (p.value - inOffset.value > ni) {
 	        throw 'Something wrong with hufUnpackEncTable';
@@ -138,8 +134,6 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	      c = bits.c;
 	    	lc = bits.lc;
 
-	      // console.log('zerunA: ' + zerun);
-
 	      if (im + zerun > iM + 1) {
 	        throw 'Something wrong with hufUnpackEncTable';
 	      }
@@ -149,8 +143,6 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	      im--;
 	    } else if (l >= SHORT_ZEROCODE_RUN) {
 	      var zerun = l - SHORT_ZEROCODE_RUN + 2;
-
-	      // console.log('zerunB: ' + zerun);
 
 	      if (im + zerun > iM + 1) {
 	        throw 'Something wrong with hufUnpackEncTable';
@@ -175,18 +167,12 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	  // Assumes that hufClearDecTable(hdecod) has already been called.
 	  //
 
-	  var stop = 0;
-
 	  for (; im <= iM; im++) {
 	    var c = hufCode(hcode[im]);
 	    var l = hufLength(hcode[im]);
 
 	    if (c >> l) {
 	      throw 'Invalid table entry';
-	    }
-
-	    if (stop % 100 == 0) {
-	    	// console.log(stop + ' c: ' + c + ' l: ' + l);
 	    }
 
 	    if (l > HUF_DECBITS) {
@@ -208,11 +194,7 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 
 	        for (var i = 0; i < pl.lit - 1; ++i) {
 	        	pl.p[i] = p[i];
-	        	//console.log('pl.p[i]: ' + pl.p[i]);
 	        }
-
-	        //exit(0);
-
 	      } else {
 	        pl.p = new Array(1);
 	      }
@@ -238,11 +220,6 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	        plOffset++;
 	      }
 	    }
-
-	    stop++;
-	    // if (stop > 100) {
-	    //   exit(0);
-	    // }
 	  }
 
 	  return true;
@@ -299,10 +276,6 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 
 	  var as = ai;
 	  var bs = ai - hi;
-
-	  // console.log(as + " " + bs);
-
-	  // exit(0);
 
 	  return {a: as, b: bs}
 	}
