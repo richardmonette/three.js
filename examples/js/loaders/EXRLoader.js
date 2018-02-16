@@ -98,6 +98,8 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	const SHORTEST_LONG_RUN = 2 + LONG_ZEROCODE_RUN - SHORT_ZEROCODE_RUN;
 	const LONGEST_LONG_RUN = 255 + SHORTEST_LONG_RUN;
 
+	const BYTES_PER_HALF = 2;
+
 	function reverseLutFromBitmap(bitmap, lut) {
 		var k = 0;
 
@@ -137,21 +139,9 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	function hufCanonicalCodeTable(hcode) {
 	  var n = new Array(59);
 
-	  //
-	  // For each i from 0 through 58, count the
-	  // number of different codes of length i, and
-	  // store the count in n[i].
-	  //
-
 	  for (var i = 0; i <= 58; ++i) n[i] = 0;
 
 	  for (var i = 0; i < HUF_ENCSIZE; ++i) n[hcode[i]] += 1;
-
-	  //
-	  // For each i from 58 through 1, compute the
-	  // numerically lowest code with length i, and
-	  // store that code in n[i].
-	  //
 
 	  var c = 0;
 
@@ -160,13 +150,6 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	    n[i] = c;
 	    c = nc;
 	  }
-
-	  //
-	  // hcode[i] contains the length, l, of the
-	  // code for symbol i.  Assign the next available
-	  // code of length l to the symbol and store both
-	  // l and the code in hcode[i].
-	  //
 
 	  for (var i = 0; i < HUF_ENCSIZE; ++i) {
 	    var l = hcode[i];
@@ -185,8 +168,7 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	      return false;
 	    }
 
-
-	    var bits = getBits(6, c, lc, inBuffer, p);  // code length
+	    var bits = getBits(6, c, lc, inBuffer, p);
 	    var l = bits.l;
 	    c = bits.c;
 	    lc = bits.lc;
@@ -230,11 +212,6 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	function hufCode(code) { return code >> 6; }
 
 	function hufBuildDecTable(hcode, im, iM, hdecod) {
-	  //
-	  // Init hashtable & loop on all codes.
-	  // Assumes that hufClearDecTable(hdecod) has already been called.
-	  //
-
 	  for (; im <= iM; im++) {
 	    var c = hufCode(hcode[im]);
 	    var l = hufLength(hcode[im]);
@@ -244,10 +221,6 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	    }
 
 	    if (l > HUF_DECBITS) {
-	      //
-	      // Long code: add a secondary entry
-	      //
-
 	      var pl = hdecod[(c >> (l - HUF_DECBITS))];
 
 	      if (pl.len) {
@@ -269,10 +242,6 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 
 	      pl.p[pl.lit - 1] = im;
 	    } else if (l) {
-	      //
-	      // Short code: init all primary entries
-	      //
-
 	      var plOffset = 0;
 
 	      for (var i = 1 << (HUF_DECBITS - l); i > 0; i--) {
@@ -348,42 +317,16 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	  return {a: as, b: bs}
 	}
 
-	function wdec16(l, h) {
-	  var m = l;
-	  var d = h;
-	  var bb = (m - (d >> 1)) & MOD_MASK;
-	  var aa = (d + bb - A_OFFSET) & MOD_MASK;
-
-	  return {a: aa, b: bb};
-	}
-
-  function wav2Decode(
-  	j,
-    buffer,  // io: values are transformed in place
-    nx,      // i : x size
-    ox,      // i : x offset
-    ny,      // i : y size
-    oy,      // i : y offset
-    mx)      // i : maximum in[x][y] value
-	{
-	  var w14 = (mx < (1 << 14));
+  function wav2Decode(j, buffer, nx, ox, ny, oy, mx) {
 	  var n = (nx > ny) ? ny : nx;
 	  var p = 1;
 	  var p2;
-
-	  //
-	  // Search max level
-	  //
 
 	  while (p <= n) p <<= 1;
 
 	  p >>= 1;
 	  p2 = p;
 	  p >>= 1;
-
-	  //
-	  // Hierarchical loop on smaller dimension n
-	  //
 
 	  while (p >= 1) {
 	    var py = 0;
@@ -394,86 +337,42 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	    var ox2 = ox * p2;
 	    var i00, i01, i10, i11;
 
-	    //
-	    // Y loop
-	    //
-
 	    for (; py <= ey; py += oy2) {
 	      var px = py;
 	      var ex = py + ox * (nx - p2);
-
-	      //
-	      // X loop
-	      //
 
 	      for (; px <= ex; px += ox2) {
 	        var p01 = px + ox1;
 	        var p10 = px + oy1;
 	        var p11 = p10 + ox1;
 
-	        //
-	        // 2D wavelet decoding
-	        //
+          var tmp = wdec14(buffer[px + j], buffer[p10 + j]);
+          i00 = tmp.a;
+          i10 = tmp.b;
 
-	        if (w14) {
-	          var tmp = wdec14(buffer[px + j], buffer[p10 + j]);
-	          i00 = tmp.a;
-	          i10 = tmp.b;
+          var tmp = wdec14(buffer[p01 + j], buffer[p11 + j]);
+          i01 = tmp.a;
+          i11 = tmp.b;
 
-	          var tmp = wdec14(buffer[p01 + j], buffer[p11 + j]);
-	          i01 = tmp.a;
-	          i11 = tmp.b;
+          var tmp = wdec14(i00, i01);
+          buffer[px + j] = tmp.a;
+          buffer[p01 + j] = tmp.b;
 
-	          var tmp = wdec14(i00, i01);
-	          buffer[px + j] = tmp.a;
-	          buffer[p01 + j] = tmp.b;
-
-	          var tmp = wdec14(i10, i11);
-	          buffer[p10 + j] = tmp.a;
-	          buffer[p11 + j] = tmp.b;
-	        } else {
-	          var tmp = wdec16(buffer[px + j], buffer[p10 + j]);
-	          i00 = tmp.a;
-	          i10 = tmp.b;
-
-	          var tmp = wdec16(buffer[p01 + j], buffer[p11 + j]);
-	          i01 = tmp.a;
-	          i11 = tmp.b;
-
-	          var tmp = wdec16(i00, i01);
-	          buffer[px + j] = tmp.a;
-	          buffer[p01 + j] = tmp.b;
-
-	          var tmp = wdec16(i10, i11);
-	          buffer[p10 + j] = tmp.a;
-	          buffer[p11 + j] = tmp.b;
-	        }
+          var tmp = wdec14(i10, i11);
+          buffer[p10 + j] = tmp.a;
+          buffer[p11 + j] = tmp.b;
 	      }
-
-	      //
-	      // Decode (1D) odd column (still in Y loop)
-	      //
 
 	      if (nx & p) {
 	        var p10 = px + oy1;
 
-	        if (w14) {
-	          var tmp = wdec14(buffer[px + j], buffer[p10 + j]);
-	        	i00 = tmp.a;
-	        	buffer[p10 + j] = tmp.b;
-	        } else {
-	          var tmp = wdec16(buffer[px + j], buffer[p10 + j]);
-	          i00 = tmp.a;
-	          buffer[p10 + j] = tmp.b;
-	        }
+          var tmp = wdec14(buffer[px + j], buffer[p10 + j]);
+        	i00 = tmp.a;
+        	buffer[p10 + j] = tmp.b;
 
 	        buffer[px + j] = i00;
 	      }
 	    }
-
-	    //
-	    // Decode (1D) odd line (must loop in X)
-	    //
 
 	    if (ny & p) {
 	      var px = py;
@@ -482,23 +381,13 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	      for (; px <= ex; px += ox2) {
 	        var p01 = px + ox1;
 
-	        if (w14) {
-	          var tmp = wdec14(buffer[px + j], buffer[p01 + j]);
-	        	i00 = tmp.a;
-	        	buffer[p01 + j] = tmp.b;
-	        } else {
-	          var tmp = wdec16(buffer[px + j], buffer[p01 + j]);
-	          i00 = tmp.a;
-	          buffer[p01 + j] = tmp.b;
-	        }
+          var tmp = wdec14(buffer[px + j], buffer[p01 + j]);
+        	i00 = tmp.a;
+        	buffer[p01 + j] = tmp.b;
 
 	        buffer[px + j] = i00;
 	      }
 	    }
-
-	    //
-	    // Next level
-	    //
 
 	    p2 = p;
 	    p >>= 1;
@@ -510,10 +399,8 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	function hufDecode(encodingTable, decodingTable, inBuffer, inOffset, ni, rlc, no, outBuffer, outOffset) {
 	  var c = 0;
 	  var lc = 0;
-	  // unsigned short *outb = out;
-	  // unsigned short *oe = out + no;
 	  var outBufferEndOffset = no;
-	  var inOffsetEnd = parseInt(inOffset.value + (ni + 7) / 8);  // input byte size
+	  var inOffsetEnd = parseInt(inOffset.value + (ni + 7) / 8);
 
 	  while (inOffset.value < inOffsetEnd) {
 	    var temp = getChar(c, lc, inBuffer, inOffset);
@@ -539,7 +426,7 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	        for (j = 0; j < pl.lit; j++) {
 	          var l = hufLength(encodingTable[pl.p[j]]);
 
-	          while (lc < l && inOffset.value < inOffsetEnd) {  // get more bits
+	          while (lc < l && inOffset.value < inOffsetEnd) {
 	            var temp = getChar(c, lc, inBuffer, inOffset);
 							c = temp.c;
 							lc = temp.lc;
@@ -563,13 +450,7 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	        }
 	      }
 	    }
-
-	    stop++;
 	  }
-
-	  //
-	  // Get remaining (short) codes
-	  //
 
 	  var i = (8 - ni) & 7;
 	  c >>= i;
@@ -587,12 +468,6 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	      throw 'hufDecode issues';
 	    }
 	  }
-
-	  // TODO: MAKE THIS CHECK ON OFFSET MOVING FORWARD ENOUGH
-	  // if (out - outb != no) {
-	  //   throw 'hufDecode issues';
-	  // }
-	  // notEnoughData ();
 
 	  return true;
 	}
@@ -634,18 +509,7 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	  }
 	}
 
-	function decompressPIZ(
-		outBuffer,
-		outOffset,
-		inBuffer,
-		inOffset,
-		tmpBufSize,
-		num_channels,
-		exrChannelInfos,
-		dataWidth,
-		num_lines
-	)
-	{
+	function decompressPIZ(outBuffer, outOffset, inBuffer, inOffset, tmpBufSize, num_channels, exrChannelInfos, dataWidth, num_lines) {
 		var bitmap = new Uint8Array(BITMAP_SIZE);
 
   	var minNonZero = parseUint16(inBuffer, inOffset);
@@ -664,17 +528,9 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	  var lut = new Uint16Array(USHORT_RANGE);
 	  var maxValue = reverseLutFromBitmap(bitmap, lut);
 
-	  //
-	  // Huffman decoding
-	  //
-
 	  var length = parseUint32(inBuffer, inOffset);
 
 	  hufUncompress(inBuffer, inOffset, length, outBuffer, outOffset, tmpBufSize);
-
-	  //
-	  // Wavelet decoding
-	  //
 
 	  var pizChannelData = new Array(num_channels);
 
@@ -713,22 +569,7 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 	  	}
 	  }
 
-	  //
-	  // Expand the pixel data to their original range
-	  //
-
 	  applyLut(lut, outBuffer, outBufferEnd);
-
-	  // for (var y = 0; y < num_lines; y++) {
-	  //   for (var i = 0; i < channelData.size(); ++i) {
-	  //     PIZChannelData &cd = channelData[i];
-
-	  //     size_t n = static_cast<size_t>(cd.nx * cd.size);
-	  //     memcpy(outPtr, cd.end, static_cast<size_t>(n * sizeof(unsigned short)));
-	  //     outPtr += n * sizeof(unsigned short);
-	  //     cd.end += n;
-	  //   }
-	  // }
 
 		return true;
 	}
@@ -1070,30 +911,18 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 
 	} else if (EXRHeader.compression == 'PIZ_COMPRESSION') {
 
-		var width = 1024; // known from the image size
-		var num_lines = 32; // given for scanlines
-		var pixel_data_size = 6; // 3 channels * 2 bytes per channel (HALF)
-
-		for ( var scanlineBlockIdx = 0; scanlineBlockIdx < height / num_lines; scanlineBlockIdx++ ) {
+		for ( var scanlineBlockIdx = 0; scanlineBlockIdx < height / scanlineBlockSize; scanlineBlockIdx++ ) {
 
 			var line_no = parseUint32( buffer, offset );
 			var data_len = parseUint32( buffer, offset );
 
-			// this will read num_lines ie 32 out of our buffer
-
-			var tmpBufferSize = width * num_lines * pixel_data_size;
-			var tmpBuffer = new Uint16Array(tmpBufferSize); // is this the right format for this? thinking this maybe should be float, or half size float, or just number
+			var tmpBufferSize = width * scanlineBlockSize * (EXRHeader.channels.length * BYTES_PER_HALF);
+			var tmpBuffer = new Uint16Array(tmpBufferSize);
 	  	var tmpOffset = { value: 0 };
 
-			decompressPIZ(tmpBuffer, tmpOffset, buffer, offset, tmpBufferSize, numChannels, EXRHeader.channels, width, num_lines);
+			decompressPIZ(tmpBuffer, tmpOffset, buffer, offset, tmpBufferSize, numChannels, EXRHeader.channels, width, scanlineBlockSize);
 
-		  var tmpOffset = { value: 0 };
-
-			// tmpBuffer should now have 32 lines worth of data decompressed
-
-			// TODO: must loop over the decompressed data, moving ahead as we go
-
-			for ( var line_y = 0; line_y < num_lines; line_y ++ ) {
+			for ( var line_y = 0; line_y < scanlineBlockSize; line_y ++ ) {
 
 				for ( var channelID = 0; channelID < EXRHeader.channels.length; channelID ++ ) {
 
@@ -1103,11 +932,11 @@ THREE.EXRLoader.prototype._parser = function ( buffer ) {
 						for ( var x = 0; x < width; x ++ ) {
 
 							var cOff = channelOffsets[ EXRHeader.channels[ channelID ].name ];
-							var val = decodeFloat16(tmpBuffer[ (channelID * (num_lines * width)) + (line_y * width) + x ]);
+							var val = decodeFloat16(tmpBuffer[ (channelID * (scanlineBlockSize * width)) + (line_y * width) + x ]);
 
-							var true_y = line_y + (scanlineBlockIdx * num_lines);
+							var true_y = line_y + (scanlineBlockIdx * scanlineBlockSize);
 
-							byteArray[ ( ( true_y * ( width * numChannels ) ) + ( x * numChannels ) ) + cOff ] = val;
+							byteArray[ ( ( (height - true_y) * ( width * numChannels ) ) + ( x * numChannels ) ) + cOff ] = val;
 
 						}
 
