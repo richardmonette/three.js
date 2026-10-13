@@ -89,6 +89,7 @@
 			import * as THREE from 'three';
 
 			import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+			import { TextureHelper } from 'three/addons/helpers/TextureHelper.js';
 
 			let canvas, renderer;
 
@@ -135,6 +136,16 @@
 						{ path: '2d_etc1s.ktx2' },
 						{ path: '2d_uastc.ktx2' },
 						{ path: '2d_uastc_hdr4x4.ktx2' },
+					]
+				},
+
+				{
+					title: 'Array',
+					description: 'Array textures contain multiple layers of the same size, and load as'
+						+ ' THREE.CompressedArrayTexture objects. Layers are shown here with THREE.TextureHelper.',
+					textures: [
+						{ path: 'array_etc1s.ktx2' },
+						{ path: 'array_uastc.ktx2' },
 					]
 				},
 			];
@@ -196,11 +207,23 @@
 						try {
 
 							const texture = await loader.loadAsync( supported === false ? 'fail_load.ktx2' : path );
-							const mesh = new THREE.Mesh( geometry, new THREE.MeshBasicMaterial( { map: texture } ) );
+
+							if ( texture.isCompressedArrayTexture ) {
+
+								const helper = new TextureHelper( texture, 1, 1, 2 );
+								helper.rotation.set( 0.3, - 0.9, 0 );
+								scene.add( helper );
+
+								camera.position.z = 2.8;
+
+							} else {
+
+								scene.add( new THREE.Mesh( geometry, new THREE.MeshBasicMaterial( { map: texture } ) ) );
+
+							}
 
 							labelElement.innerText += '\ncolorSpace: ' + texture.colorSpace;
 
-							scene.add( mesh );
 							scenes.push( scene );
 
 						} catch ( e ) {
