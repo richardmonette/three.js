@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgpu - impostors</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<meta property="og:title" content="three.js webgpu - impostors">
+		<meta property="og:type" content="website">
+		<meta property="og:url" content="https://threejs.org/examples/webgpu_impostors.html">
+		<meta property="og:image" content="https://threejs.org/examples/screenshots/webgpu_impostors.jpg">
+		<link type="text/css" rel="stylesheet" href="example.css">
+	</head>
+	<body>
+
+		<div id="info">
+			<a href="https://threejs.org/" target="_blank" rel="noopener" class="logo-link"></a>
+
+			<div class="title-wrapper">
+				<a href="https://threejs.org/" target="_blank" rel="noopener">three.js</a><span>Impostors</span>
+			</div>
+
+			<small>
+				<a href="https://github.com/richardmonette/three-impostor" target="_blank" rel="noopener">three-impostor</a>. Left: the mesh, 91,216 triangles. Right: its impostor, 12 triangles.
+			</small>
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.webgpu.js",
+					"three/webgpu": "../build/three.webgpu.js",
+					"three/tsl": "../build/three.tsl.js",
+					"three/addons/": "./jsm/",
+					"three-impostor": "https://cdn.jsdelivr.net/npm/three-impostor@0.2.0/Impostor.js"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+
+			import { Inspector } from 'three/addons/inspector/Inspector.js';
+
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+			import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+			import { ImpostorBaker, ImpostorNodeMaterial } from 'three-impostor';
+
+			let camera, scene, renderer, controls;
+
+			init();
+
+			async function init() {
+
+				camera = new THREE.PerspectiveCamera( 40, window.innerWidth / window.innerHeight, 0.1, 100 );
+				camera.position.set( 0, 1.5, 9 );
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0x2b3a4a );
+				scene.add( new THREE.HemisphereLight( 0xffffff, 0x2b3a4a, 2 ) );
+
+				const light = new THREE.DirectionalLight( 0xffffff, 3 );
+				light.position.set( 1, 2, 3 );
+				scene.add( light );
+
+				renderer = new THREE.WebGPURenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( render );
+				renderer.inspector = new Inspector();
+				document.body.appendChild( renderer.domElement );
+
+				controls = new OrbitControls( camera, renderer.domElement );
+				controls.target.set( 0, 1.2, 0 );
+				controls.update();
+
+				window.addEventListener( 'resize', onWindowResize );
+
+				// mesh
+
+				const gltf = await new GLTFLoader().loadAsync( 'models/gltf/DragonAttenuation.glb' );
+
+				const dragon = gltf.scene.getObjectByName( 'Dragon' );
+				dragon.material = new THREE.MeshStandardNodeMaterial( { color: 0xeba310, roughness: 0.5 } );
+				dragon.position.set( - 2, 0, 0 );
+				scene.add( dragon );
+
+				// impostor
+
+				const baker = new ImpostorBaker( renderer );
+
+				const params = { layout: 'box', boxResolution: 256, octahedralResolution: 256, frames: 12, view: 'near', wireframe: false };
+
+				const impostor = new THREE.Mesh();
+				impostor.quaternion.copy( dragon.quaternion );
+				impostor.scale.copy( dragon.scale );
+				impostor.position.set( 2, 0, 0 );
+
+				async function bake() {
+
+					const options = params.layout === 'box'
+						? { resolution: params.boxResolution }
+						: { layout: 'octahedral', resolution: params.octahedralResolution, frames: params.frames };
+
+					const data = await baker.bake( dragon, options );
+
+					if ( impostor.material.impostor ) {
+
+						impostor.material.impostor.dispose();
+						impostor.material.dispose();
+
+					}
+
+					impostor.geometry = data.geometry;
+					impostor.material = new ImpostorNodeMaterial( data, { roughness: 0.5 } );
+
+				}
+
+				await bake();
+
+				scene.add( impostor );
+
+				const wireframe = new THREE.LineSegments( new THREE.WireframeGeometry( impostor.geometry ), new THREE.LineBasicNodeMaterial() );
+				wireframe.visible = false;
+				impostor.add( wireframe );
+
+				// gui
+
+				const gui = renderer.inspector.createParameters( 'Settings' );
+
+				gui.add( params, 'layout', [ 'box', 'octahedral' ] ).onChange( ( value ) => {
+
+					const box = value === 'box';
+
+					box ? boxResolution.show() : boxResolution.hide();
+					box ? octahedralResolution.hide() : octahedralResolution.show();
+					box ? frames.hide() : frames.show();
+
+					bake();
+
+				} );
+
+				const boxResolution = gui.add( params, 'boxResolution', [ 128, 256, 512 ] ).name( 'resolution' ).onChange( bake );
+				const octahedralResolution = gui.add( params, 'octahedralResolution', [ 64, 128, 256 ] ).name( 'resolution' ).onChange( bake ).hide();
+				const frames = gui.add( params, 'frames', [ 8, 12, 16 ] ).onChange( bake ).hide();
+
+				gui.add( params, 'view', [ 'near', 'far' ] ).onChange( ( value ) => {
+
+					camera.position.sub( controls.target ).setLength( value === 'near' ? 9 : 30 ).add( controls.target );
+					controls.update();
+
+				} );
+
+				gui.add( params, 'wireframe' ).onChange( ( value ) => {
+
+					dragon.material.wireframe = value;
+					dragon.material.needsUpdate = true;
+					wireframe.visible = value;
+
+				} );
+
+			}
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+
+			function render() {
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>
