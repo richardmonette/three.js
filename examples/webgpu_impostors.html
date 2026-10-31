@@ -16,6 +16,7 @@
 				padding: 2px 6px;
 				text-align: center;
 				border-radius: 4px;
+				border-bottom: 2px solid;
 				background: rgba( 0, 0, 0, 0.5 );
 			}
 		</style>
@@ -115,10 +116,15 @@
 				const params = { count: 5, boxResolution: 256, octahedralResolution: 256, frames: 12, lod: true, wireframe: false };
 
 				levels.push(
-					{ name: 'mesh', mesh: dragon, distance: 0 },
-					{ name: 'box', mesh: new THREE.Mesh(), distance: 18.5 },
-					{ name: 'octahedral', mesh: new THREE.Mesh(), distance: 31 }
+					{ name: 'mesh', mesh: dragon, distance: 0, color: new THREE.Color( 0x4fc3f7 ) },
+					{ name: 'box', mesh: new THREE.Mesh(), distance: 18.5, color: new THREE.Color( 0xff5c8a ) },
+					{ name: 'octahedral', mesh: new THREE.Mesh(), distance: 31, color: new THREE.Color( 0x8bdf5b ) }
 				);
+
+				// wireframes are coloured by level, so it's clear which one each dragon is drawing
+
+				const meshWireframeMaterial = new THREE.MeshBasicNodeMaterial( { color: levels[ 0 ].color, wireframe: true } );
+				for ( const level of levels ) level.lineMaterial = new THREE.LineBasicNodeMaterial( { color: level.color } );
 
 				async function bake( index, options ) {
 
@@ -153,8 +159,6 @@
 
 				await bakeBox();
 				await bakeOctahedral();
-
-				const wireframeMaterial = new THREE.LineBasicNodeMaterial();
 
 				function setLOD( value ) {
 
@@ -200,14 +204,19 @@
 
 						}
 
-						for ( const { mesh, distance, wireframe } of levels ) {
+						for ( const { mesh, distance, wireframe, lineMaterial } of levels ) {
 
 							const object = new THREE.Mesh( mesh.geometry, mesh.material );
 							lod.addLevel( object, distance, 0.05 );
 
-							if ( wireframe === undefined ) continue;
+							if ( mesh === dragon ) {
 
-							const lines = new THREE.LineSegments( wireframe, wireframeMaterial );
+								if ( params.wireframe ) object.material = meshWireframeMaterial;
+								continue;
+
+							}
+
+							const lines = new THREE.LineSegments( wireframe, lineMaterial );
 							lines.visible = params.wireframe;
 							object.add( lines );
 
@@ -265,11 +274,9 @@
 
 				gui.add( params, 'wireframe' ).onChange( ( value ) => {
 
-					dragon.material.wireframe = value;
-					dragon.material.needsUpdate = true;
-
 					for ( const { lod } of dragons ) {
 
+						lod.levels[ 0 ].object.material = value ? meshWireframeMaterial : dragon.material;
 						for ( const level of lod.levels.slice( 1 ) ) level.object.children[ 0 ].visible = value;
 
 					}
@@ -302,11 +309,12 @@
 
 					if ( level !== dragon.level ) {
 
-						const { name, mesh } = levels[ level ];
+						const { name, mesh, color } = levels[ level ];
 						const triangles = mesh.geometry.index ? mesh.geometry.index.count / 3 : mesh.geometry.attributes.position.count / 3;
 
 						dragon.level = level;
 						dragon.element.innerHTML = `${ name }<br>${ triangles.toLocaleString( 'en-US' ) } triangles`;
+						dragon.element.style.borderColor = `#${ color.getHexString() }`;
 
 					}
 
