@@ -9,6 +9,16 @@
 		<meta property="og:url" content="https://threejs.org/examples/webgpu_impostors.html">
 		<meta property="og:image" content="https://threejs.org/examples/screenshots/webgpu_impostors.jpg">
 		<link type="text/css" rel="stylesheet" href="example.css">
+		<style>
+			.label {
+				color: #fff;
+				font: 11px sans-serif;
+				padding: 2px 6px;
+				text-align: center;
+				border-radius: 4px;
+				background: rgba( 0, 0, 0, 0.5 );
+			}
+		</style>
 	</head>
 	<body>
 
@@ -20,7 +30,7 @@
 			</div>
 
 			<small>
-				<a href="https://github.com/richardmonette/three-impostor" target="_blank" rel="noopener">three-impostor</a>. Left: the mesh, 91,216 triangles. Right: its impostor, 12 triangles.
+				<a href="https://github.com/richardmonette/three-impostor" target="_blank" rel="noopener">three-impostor</a>. Each dragon is a LOD: the mesh up close, then a box impostor, then an octahedral impostor.
 			</small>
 		</div>
 
@@ -44,16 +54,20 @@
 
 			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 			import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+			import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 			import { ImpostorBaker, ImpostorNodeMaterial } from 'three-impostor';
 
-			let camera, scene, renderer, controls;
+			let camera, scene, renderer, labelRenderer, controls;
+
+			const levels = [];
+			const dragons = [];
 
 			init();
 
 			async function init() {
 
-				camera = new THREE.PerspectiveCamera( 40, window.innerWidth / window.innerHeight, 0.1, 100 );
-				camera.position.set( 0, 1.5, 9 );
+				camera = new THREE.PerspectiveCamera( 40, window.innerWidth / window.innerHeight, 0.1, 200 );
+				camera.position.set( - 11, 9, 8 );
 
 				scene = new THREE.Scene();
 				scene.background = new THREE.Color( 0x2b3a4a );
@@ -70,8 +84,15 @@
 				renderer.inspector = new Inspector();
 				document.body.appendChild( renderer.domElement );
 
+				labelRenderer = new CSS2DRenderer();
+				labelRenderer.setSize( window.innerWidth, window.innerHeight );
+				labelRenderer.domElement.style.position = 'absolute';
+				labelRenderer.domElement.style.top = '0px';
+				labelRenderer.domElement.style.pointerEvents = 'none';
+				document.body.appendChild( labelRenderer.domElement );
+
 				controls = new OrbitControls( camera, renderer.domElement );
-				controls.target.set( 0, 1.2, 0 );
+				controls.target.set( 1.5, 0, - 11.5 );
 				controls.update();
 
 				window.addEventListener( 'resize', onWindowResize );
@@ -82,27 +103,27 @@
 
 				const dragon = gltf.scene.getObjectByName( 'Dragon' );
 				dragon.material = new THREE.MeshStandardNodeMaterial( { color: 0xeba310, roughness: 0.5 } );
-				dragon.position.set( - 2, 0, 0 );
-				scene.add( dragon );
 
-				// impostor
+				const bounds = new THREE.Box3().setFromBufferAttribute( dragon.geometry.attributes.position );
+				bounds.applyMatrix4( new THREE.Matrix4().compose( new THREE.Vector3(), dragon.quaternion, dragon.scale ) );
+				const top = bounds.getCenter( new THREE.Vector3() ).setY( bounds.max.y + 0.2 );
+
+				// impostors, baked once and shared by every dragon
 
 				const baker = new ImpostorBaker( renderer );
 
-				const params = { layout: 'box', boxResolution: 256, octahedralResolution: 256, frames: 12, view: 'near', wireframe: false };
+				const params = { boxResolution: 256, octahedralResolution: 256, frames: 12, lod: true, wireframe: false };
 
-				const impostor = new THREE.Mesh();
-				impostor.quaternion.copy( dragon.quaternion );
-				impostor.scale.copy( dragon.scale );
-				impostor.position.set( 2, 0, 0 );
+				levels.push(
+					{ name: 'mesh', mesh: dragon, distance: 0 },
+					{ name: 'box', mesh: new THREE.Mesh(), distance: 18.5 },
+					{ name: 'octahedral', mesh: new THREE.Mesh(), distance: 31 }
+				);
 
-				async function bake() {
-
-					const options = params.layout === 'box'
-						? { resolution: params.boxResolution }
-						: { layout: 'octahedral', resolution: params.octahedralResolution, frames: params.frames };
+				async function bake( index, options ) {
 
 					const data = await baker.bake( dragon, options );
+					const impostor = levels[ index ].mesh;
 
 					if ( impostor.material.impostor ) {
 
@@ -114,40 +135,74 @@
 					impostor.geometry = data.geometry;
 					impostor.material = new ImpostorNodeMaterial( data, { roughness: 0.5 } );
 
+					for ( const { lod } of dragons ) {
+
+						lod.levels[ index ].object.geometry = impostor.geometry;
+						lod.levels[ index ].object.material = impostor.material;
+
+					}
+
 				}
 
-				await bake();
+				const bakeBox = () => bake( 1, { resolution: params.boxResolution } );
+				const bakeOctahedral = () => bake( 2, { layout: 'octahedral', resolution: params.octahedralResolution, frames: params.frames } );
 
-				scene.add( impostor );
+				await bakeBox();
+				await bakeOctahedral();
 
-				const wireframe = new THREE.LineSegments( new THREE.WireframeGeometry( impostor.geometry ), new THREE.LineBasicNodeMaterial() );
-				wireframe.visible = false;
-				impostor.add( wireframe );
+				// a row of dragons, each switching level with its distance to the camera
+
+				for ( let i = 0; i < 5; i ++ ) {
+
+					const lod = new THREE.LOD();
+					lod.position.set( 0, 0, - i * 8 );
+					lod.quaternion.copy( dragon.quaternion );
+					lod.scale.copy( dragon.scale );
+
+					for ( const { mesh, distance } of levels ) {
+
+						const object = new THREE.Mesh( mesh.geometry, mesh.material );
+						lod.addLevel( object, distance, 0.05 );
+
+						if ( mesh === dragon ) continue;
+
+						const wireframe = new THREE.LineSegments( new THREE.WireframeGeometry( mesh.geometry ), new THREE.LineBasicNodeMaterial() );
+						wireframe.visible = false;
+						object.add( wireframe );
+
+					}
+
+					scene.add( lod );
+
+					const element = document.createElement( 'div' );
+					element.className = 'label';
+
+					const label = new CSS2DObject( element );
+					label.center.set( 0.5, 1 );
+					label.position.copy( lod.position ).add( top );
+					scene.add( label );
+
+					dragons.push( { lod, element, level: - 1 } );
+
+				}
 
 				// gui
 
 				const gui = renderer.inspector.createParameters( 'Settings' );
 
-				gui.add( params, 'layout', [ 'box', 'octahedral' ] ).onChange( ( value ) => {
+				gui.add( params, 'boxResolution', [ 128, 256, 512 ] ).name( 'box resolution' ).onChange( bakeBox );
+				gui.add( params, 'octahedralResolution', [ 64, 128, 256 ] ).name( 'octahedral resolution' ).onChange( bakeOctahedral );
+				gui.add( params, 'frames', [ 8, 12, 16 ] ).name( 'octahedral frames' ).onChange( bakeOctahedral );
 
-					const box = value === 'box';
+				gui.add( params, 'lod' ).name( 'LOD' ).onChange( ( value ) => {
 
-					box ? boxResolution.show() : boxResolution.hide();
-					box ? octahedralResolution.hide() : octahedralResolution.show();
-					box ? frames.hide() : frames.show();
+					for ( const { lod } of dragons ) {
 
-					bake();
+						lod.autoUpdate = value;
 
-				} );
+						if ( value === false ) lod.levels.forEach( ( level, i ) => level.object.visible = i === 0 );
 
-				const boxResolution = gui.add( params, 'boxResolution', [ 128, 256, 512 ] ).name( 'resolution' ).onChange( bake );
-				const octahedralResolution = gui.add( params, 'octahedralResolution', [ 64, 128, 256 ] ).name( 'resolution' ).onChange( bake ).hide();
-				const frames = gui.add( params, 'frames', [ 8, 12, 16 ] ).onChange( bake ).hide();
-
-				gui.add( params, 'view', [ 'near', 'far' ] ).onChange( ( value ) => {
-
-					camera.position.sub( controls.target ).setLength( value === 'near' ? 9 : 30 ).add( controls.target );
-					controls.update();
+					}
 
 				} );
 
@@ -155,7 +210,12 @@
 
 					dragon.material.wireframe = value;
 					dragon.material.needsUpdate = true;
-					wireframe.visible = value;
+
+					for ( const { lod } of dragons ) {
+
+						for ( const level of lod.levels.slice( 1 ) ) level.object.children[ 0 ].visible = value;
+
+					}
 
 				} );
 
@@ -167,12 +227,33 @@
 				camera.updateProjectionMatrix();
 
 				renderer.setSize( window.innerWidth, window.innerHeight );
+				labelRenderer.setSize( window.innerWidth, window.innerHeight );
 
 			}
 
 			function render() {
 
 				renderer.render( scene, camera );
+
+				// label each dragon with the level it is showing
+
+				for ( const dragon of dragons ) {
+
+					const level = dragon.lod.levels.findIndex( ( level ) => level.object.visible );
+
+					if ( level !== dragon.level ) {
+
+						const { name, mesh } = levels[ level ];
+						const triangles = mesh.geometry.index ? mesh.geometry.index.count / 3 : mesh.geometry.attributes.position.count / 3;
+
+						dragon.level = level;
+						dragon.element.innerHTML = `${ name }<br>${ triangles.toLocaleString( 'en-US' ) } triangles`;
+
+					}
+
+				}
+
+				labelRenderer.render( scene, camera );
 
 			}
 
