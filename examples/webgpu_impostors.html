@@ -30,7 +30,7 @@
 			</div>
 
 			<small>
-				<a href="https://github.com/richardmonette/three-impostor" target="_blank" rel="noopener">three-impostor</a>. Each dragon is a LOD: the mesh up close, then a box impostor, then an octahedral impostor.
+				<a href="https://github.com/richardmonette/three-impostor" target="_blank" rel="noopener">three-impostor</a>. Each dragon is a LOD: the mesh up close, then a box impostor, then an octahedral impostor. Try 400 dragons with LOD on and off.
 			</small>
 		</div>
 
@@ -66,7 +66,7 @@
 
 			async function init() {
 
-				camera = new THREE.PerspectiveCamera( 40, window.innerWidth / window.innerHeight, 0.1, 200 );
+				camera = new THREE.PerspectiveCamera( 40, window.innerWidth / window.innerHeight, 0.1, 400 );
 				camera.position.set( - 11, 9, 8 );
 
 				scene = new THREE.Scene();
@@ -112,7 +112,7 @@
 
 				const baker = new ImpostorBaker( renderer );
 
-				const params = { boxResolution: 256, octahedralResolution: 256, frames: 12, lod: true, wireframe: false };
+				const params = { count: 5, boxResolution: 256, octahedralResolution: 256, frames: 12, lod: true, wireframe: false };
 
 				levels.push(
 					{ name: 'mesh', mesh: dragon, distance: 0 },
@@ -123,22 +123,26 @@
 				async function bake( index, options ) {
 
 					const data = await baker.bake( dragon, options );
-					const impostor = levels[ index ].mesh;
+					const level = levels[ index ];
 
-					if ( impostor.material.impostor ) {
+					if ( level.mesh.material.impostor ) {
 
-						impostor.material.impostor.dispose();
-						impostor.material.dispose();
+						level.mesh.material.impostor.dispose();
+						level.mesh.material.dispose();
+						level.wireframe.dispose();
 
 					}
 
-					impostor.geometry = data.geometry;
-					impostor.material = new ImpostorNodeMaterial( data, { roughness: 0.5 } );
+					level.mesh.geometry = data.geometry;
+					level.mesh.material = new ImpostorNodeMaterial( data, { roughness: 0.5 } );
+					level.wireframe = new THREE.WireframeGeometry( data.geometry );
 
 					for ( const { lod } of dragons ) {
 
-						lod.levels[ index ].object.geometry = impostor.geometry;
-						lod.levels[ index ].object.material = impostor.material;
+						const object = lod.levels[ index ].object;
+						object.geometry = level.mesh.geometry;
+						object.material = level.mesh.material;
+						object.children[ 0 ].geometry = level.wireframe;
 
 					}
 
@@ -150,51 +154,9 @@
 				await bakeBox();
 				await bakeOctahedral();
 
-				// a row of dragons, each switching level with its distance to the camera
+				const wireframeMaterial = new THREE.LineBasicNodeMaterial();
 
-				for ( let i = 0; i < 5; i ++ ) {
-
-					const lod = new THREE.LOD();
-					lod.position.set( 0, 0, - i * 8 );
-					lod.quaternion.copy( dragon.quaternion );
-					lod.scale.copy( dragon.scale );
-
-					for ( const { mesh, distance } of levels ) {
-
-						const object = new THREE.Mesh( mesh.geometry, mesh.material );
-						lod.addLevel( object, distance, 0.05 );
-
-						if ( mesh === dragon ) continue;
-
-						const wireframe = new THREE.LineSegments( new THREE.WireframeGeometry( mesh.geometry ), new THREE.LineBasicNodeMaterial() );
-						wireframe.visible = false;
-						object.add( wireframe );
-
-					}
-
-					scene.add( lod );
-
-					const element = document.createElement( 'div' );
-					element.className = 'label';
-
-					const label = new CSS2DObject( element );
-					label.center.set( 0.5, 1 );
-					label.position.copy( lod.position ).add( top );
-					scene.add( label );
-
-					dragons.push( { lod, element, level: - 1 } );
-
-				}
-
-				// gui
-
-				const gui = renderer.inspector.createParameters( 'Settings' );
-
-				gui.add( params, 'boxResolution', [ 128, 256, 512 ] ).name( 'box resolution' ).onChange( bakeBox );
-				gui.add( params, 'octahedralResolution', [ 64, 128, 256 ] ).name( 'octahedral resolution' ).onChange( bakeOctahedral );
-				gui.add( params, 'frames', [ 8, 12, 16 ] ).name( 'octahedral frames' ).onChange( bakeOctahedral );
-
-				gui.add( params, 'lod' ).name( 'LOD' ).onChange( ( value ) => {
+				function setLOD( value ) {
 
 					for ( const { lod } of dragons ) {
 
@@ -204,7 +166,102 @@
 
 					}
 
-				} );
+				}
+
+				// five dragons in a row, or a grid of them, each switching level with its distance to the camera
+
+				function placeDragons() {
+
+					for ( const { lod, label } of dragons ) {
+
+						scene.remove( lod );
+						if ( label ) scene.remove( label );
+
+					}
+
+					dragons.length = 0;
+
+					const row = params.count === 5;
+					const side = Math.ceil( Math.sqrt( params.count ) );
+
+					for ( let i = 0; i < params.count; i ++ ) {
+
+						const lod = new THREE.LOD();
+						lod.quaternion.copy( dragon.quaternion );
+						lod.scale.copy( dragon.scale );
+
+						if ( row ) {
+
+							lod.position.set( 0, 0, - i * 8 );
+
+						} else {
+
+							lod.position.set( ( i % side - ( side - 1 ) / 2 ) * 6, 0, - Math.floor( i / side ) * 6 );
+
+						}
+
+						for ( const { mesh, distance, wireframe } of levels ) {
+
+							const object = new THREE.Mesh( mesh.geometry, mesh.material );
+							lod.addLevel( object, distance, 0.05 );
+
+							if ( wireframe === undefined ) continue;
+
+							const lines = new THREE.LineSegments( wireframe, wireframeMaterial );
+							lines.visible = params.wireframe;
+							object.add( lines );
+
+						}
+
+						scene.add( lod );
+
+						let label = null, element = null;
+
+						if ( row ) {
+
+							element = document.createElement( 'div' );
+							element.className = 'label';
+
+							label = new CSS2DObject( element );
+							label.center.set( 0.5, 1 );
+							label.position.copy( lod.position ).add( top );
+							scene.add( label );
+
+						}
+
+						dragons.push( { lod, label, element, level: - 1 } );
+
+					}
+
+					setLOD( params.lod );
+
+					if ( row ) {
+
+						camera.position.set( - 11, 9, 8 );
+						controls.target.set( 1.5, 0, - 11.5 );
+
+					} else {
+
+						controls.target.set( 0, 0, - ( side - 1 ) * 3 );
+						camera.position.set( - 1, 1, 1 ).setLength( side * 6 ).add( controls.target );
+
+					}
+
+					controls.update();
+
+				}
+
+				placeDragons();
+
+				// gui
+
+				const gui = renderer.inspector.createParameters( 'Settings' );
+
+				gui.add( params, 'count', [ 5, 100, 400 ] ).name( 'dragons' ).onChange( placeDragons );
+				gui.add( params, 'boxResolution', [ 128, 256, 512 ] ).name( 'box resolution' ).onChange( bakeBox );
+				gui.add( params, 'octahedralResolution', [ 64, 128, 256 ] ).name( 'octahedral resolution' ).onChange( bakeOctahedral );
+				gui.add( params, 'frames', [ 8, 12, 16 ] ).name( 'octahedral frames' ).onChange( bakeOctahedral );
+				gui.add( params, 'lod' ).name( 'LOD' ).onChange( setLOD );
 
 				gui.add( params, 'wireframe' ).onChange( ( value ) => {
 
@@ -238,6 +295,8 @@
 				// label each dragon with the level it is showing
 
 				for ( const dragon of dragons ) {
+
+					if ( dragon.element === null ) continue;
 
 					const level = dragon.lod.levels.findIndex( ( level ) => level.object.visible );
 
