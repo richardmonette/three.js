@@ -90,7 +90,7 @@ class Pipelines extends DataMap {
 
 		const data = this.get( computeNode );
 
-		if ( this._needsComputeUpdate( computeNode ) ) {
+		if ( data.pipeline === undefined || data.version !== computeNode.version ) {
 
 			const previousPipeline = data.pipeline;
 
@@ -169,7 +169,7 @@ class Pipelines extends DataMap {
 
 		const data = this.get( renderObject );
 
-		if ( this._needsRenderUpdate( renderObject ) ) {
+		if ( data.pipeline === undefined || backend.needsRenderUpdate( renderObject ) ) {
 
 			const previousPipeline = data.pipeline;
 
@@ -264,10 +264,9 @@ class Pipelines extends DataMap {
 	 */
 	isReady( renderObject ) {
 
-		const data = this.get( renderObject );
-		const pipeline = data.pipeline;
+		const pipeline = renderObject.pipeline;
 
-		if ( pipeline === undefined ) return false;
+		if ( pipeline === null ) return false;
 
 		const pipelineData = this.backend.get( pipeline );
 
@@ -476,36 +475,6 @@ class Pipelines extends DataMap {
 
 		this.backend.destroyProgram( program );
 		this.info.destroyProgram( program );
-
-	}
-
-	/**
-	 * Returns `true` if the compute pipeline for the given compute node requires an update.
-	 *
-	 * @private
-	 * @param {Node} computeNode - The compute node.
-	 * @return {boolean} Whether the compute pipeline for the given compute node requires an update or not.
-	 */
-	_needsComputeUpdate( computeNode ) {
-
-		const data = this.get( computeNode );
-
-		return data.pipeline === undefined || data.version !== computeNode.version;
-
-	}
-
-	/**
-	 * Returns `true` if the render pipeline for the given render object requires an update.
-	 *
-	 * @private
-	 * @param {RenderObject} renderObject - The render object.
-	 * @return {boolean} Whether the render object for the given render object requires an update or not.
-	 */
-	_needsRenderUpdate( renderObject ) {
-
-		const data = this.get( renderObject );
-
-		return data.pipeline === undefined || this.backend.needsRenderUpdate( renderObject );
 
 	}
 

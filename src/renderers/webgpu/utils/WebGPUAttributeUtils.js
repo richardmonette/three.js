@@ -239,7 +239,7 @@ class WebGPUAttributeUtils {
 
 		const bufferAttribute = backend.getBufferAttribute( attribute );
 		const bufferData = backend.get( bufferAttribute );
-		const buffer = backend.get( bufferAttribute ).buffer;
+		const buffer = bufferData.buffer;
 
 		let array = bufferAttribute.array;
 
