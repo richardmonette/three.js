@@ -1,7 +1,7 @@
 import GLSLNodeBuilder from './nodes/GLSLNodeBuilder.js';
 import Backend from '../common/Backend.js';
 import { getCacheKey } from '../common/RenderContext.js';
-import { AttributeType } from '../common/Constants.js';
+import { AttributeType, UPDATE_RANGE_MERGE_GAP } from '../common/Constants.js';
 
 import WebGLAttributeUtils from './utils/WebGLAttributeUtils.js';
 import WebGLVertexArrayUtils from './utils/WebGLVertexArrayUtils.js';
@@ -2065,7 +2065,9 @@ class WebGLBackend extends Backend {
 				const byteOffsetFactor = isTyped ? 1 : array.BYTES_PER_ELEMENT;
 
 				// Update ranges arrive sorted and non-overlapping which makes
-				// it easy to merge contiguous ranges.
+				// it easy to merge nearby ranges. Since the CPU array mirrors the
+				// whole GPU buffer, re-uploading the unchanged values in a small gap
+				// is safe and cheaper than an additional write call.
 
 				let start = updateRanges[ 0 ].start; // start of the current merged range
 
@@ -2076,9 +2078,9 @@ class WebGLBackend extends Backend {
 
 					const end = range.start + range.count; // exclusive end of the current range
 
-					// keep merging while the next range is contiguous
+					// keep merging while the next range is close enough
 
-					if ( next !== undefined && next.start === end ) continue;
+					if ( next !== undefined && next.start >= end && next.start - end <= UPDATE_RANGE_MERGE_GAP ) continue;
 
 					// write the merged range
 
