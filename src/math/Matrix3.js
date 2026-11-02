@@ -351,7 +351,38 @@ class Matrix3 {
 	 */
 	getNormalMatrix( matrix4 ) {
 
-		return this.setFromMatrix4( matrix4 ).invert().transpose();
+		// fused setFromMatrix4( matrix4 ).invert().transpose()
+
+		const me = matrix4.elements,
+			te = this.elements,
+
+			n11 = me[ 0 ], n21 = me[ 1 ], n31 = me[ 2 ],
+			n12 = me[ 4 ], n22 = me[ 5 ], n32 = me[ 6 ],
+			n13 = me[ 8 ], n23 = me[ 9 ], n33 = me[ 10 ],
+
+			t11 = n33 * n22 - n32 * n23,
+			t12 = n32 * n13 - n33 * n12,
+			t13 = n23 * n12 - n22 * n13,
+
+			det = n11 * t11 + n21 * t12 + n31 * t13;
+
+		if ( det === 0 ) return this.set( 0, 0, 0, 0, 0, 0, 0, 0, 0 );
+
+		const detInv = 1 / det;
+
+		te[ 0 ] = t11 * detInv;
+		te[ 3 ] = ( n31 * n23 - n33 * n21 ) * detInv;
+		te[ 6 ] = ( n32 * n21 - n31 * n22 ) * detInv;
+
+		te[ 1 ] = t12 * detInv;
+		te[ 4 ] = ( n33 * n11 - n31 * n13 ) * detInv;
+		te[ 7 ] = ( n31 * n12 - n32 * n11 ) * detInv;
+
+		te[ 2 ] = t13 * detInv;
+		te[ 5 ] = ( n21 * n13 - n23 * n11 ) * detInv;
+		te[ 8 ] = ( n22 * n11 - n21 * n12 ) * detInv;
+
+		return this;
 
 	}
 
