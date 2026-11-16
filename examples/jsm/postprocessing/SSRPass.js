@@ -626,14 +626,14 @@ class SSRPass extends Pass {
 
 				if ( this.bouncing ) {
 
-					if ( this.blur )
-						this.copyMaterial.uniforms[ 'tDiffuse' ].value = this.blurRenderTarget2.texture;
-					else
-						this.copyMaterial.uniforms[ 'tDiffuse' ].value = this.beautyRenderTarget.texture;
+					this.copyMaterial.uniforms[ 'tDiffuse' ].value = this.beautyRenderTarget.texture;
 					this.copyMaterial.blending = NoBlending;
 					this._renderPass( renderer, this.copyMaterial, this.prevRenderTarget );
 
-					this.copyMaterial.uniforms[ 'tDiffuse' ].value = this.ssrRenderTarget.texture;
+					if ( this.blur )
+						this.copyMaterial.uniforms[ 'tDiffuse' ].value = this.blurRenderTarget2.texture;
+					else
+						this.copyMaterial.uniforms[ 'tDiffuse' ].value = this.ssrRenderTarget.texture;
 					this.copyMaterial.blending = NormalBlending;
 					this._renderPass( renderer, this.copyMaterial, this.prevRenderTarget );
 
